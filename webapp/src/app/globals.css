@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  /* --- Palette: "dark terminal amber" -----------------------------
+     Terinspirasi papan kuotasi bursa lama & terminal Bloomberg:
+     latar nyaris hitam dengan sedikit hijau kebiruan (bukan hitam pekat
+     generik), garis-garis hairline, dan SATU aksen amber sebagai warna
+     "live/aktif". Profit/loss pakai hijau/merah semantik trading yang
+     sedikit di-desaturate supaya tidak norak di sebelah amber. */
+  --bg-base: #0b0f0e;
+  --bg-panel: #101615;
+  --bg-panel-raised: #141c1a;
+  --line: #23302c;
+  --line-strong: #34433d;
+
+  --text-primary: #e8ece9;
+  --text-secondary: #8fa39a;
+  --text-tertiary: #5c6d66;
+
+  --accent: #d4a24e;       /* amber - status "live", highlight utama */
+  --accent-dim: #8a6d38;
+
+  --profit: #4fae7a;
+  --profit-dim: #2e5c42;
+  --loss: #c25b52;
+  --loss-dim: #6b332e;
+
+  --font-sans: "IBM Plex Sans", "Inter", ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", "SF Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+}
+
+@theme inline {
+  --color-bg-base: var(--bg-base);
+  --color-bg-panel: var(--bg-panel);
+  --color-bg-panel-raised: var(--bg-panel-raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-profit: var(--profit);
+  --color-profit-dim: var(--profit-dim);
+  --color-loss: var(--loss);
+  --color-loss-dim: var(--loss-dim);
+  --font-family-sans: var(--font-sans);
+  --font-family-mono: var(--font-mono);
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-mono-num {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* garis pemisah tipis khas terminal data */
+.hairline {
+  border-color: var(--line);
+}
+
+/* indikator "live" berdenyut pelan - satu-satunya animasi di app ini */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot {
+    animation: none;
+  }
+}
+
+::selection {
+  background: var(--accent-dim);
+  color: var(--text-primary);
+}
