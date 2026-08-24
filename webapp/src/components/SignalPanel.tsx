@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { SignalEngineStatus } from "@/lib/types";
+import type { SignalEngineStatus, TradeSignal } from "@/lib/types";
 import { bridgeApi } from "@/lib/bridge-client";
 
 function PriceRow({ label, value, tone }: { label: string; value: number; tone?: "sl" | "tp" | "entry" }) {
@@ -152,6 +152,20 @@ export function SignalPanel({ signalEngine }: { signalEngine: SignalEngineStatus
               </span>
             </div>
 
+            {sig.chart_analysis && (
+              <div className="text-[11px] px-2 py-1.5 rounded mb-3 border text-profit bg-profit-dim/20 border-profit-dim">
+                <p className="font-medium">
+                  ✓ AI Chart Analyst setuju (confidence {(sig.chart_analysis.confidence * 100).toFixed(0)}%)
+                  {sig.confirmation_score !== undefined && ` — ${sig.confirmation_score}/3 indikator konfirmasi`}
+                </p>
+                <p className="text-text-tertiary mt-1 leading-relaxed">{sig.chart_analysis.reason}</p>
+              </div>
+            )}
+
+            {sig.news_status && sig.news_status !== "NORMAL" && (
+              <NewsBadge sig={sig} />
+            )}
+
             <div className="mb-3">
               <PriceRow label="Entry" value={sig.entry_price} tone="entry" />
               <PriceRow label="Stop Loss" value={sig.sl} tone="sl" />
@@ -166,6 +180,10 @@ export function SignalPanel({ signalEngine }: { signalEngine: SignalEngineStatus
 
             <p className="text-[11px] text-text-tertiary leading-relaxed mt-2">
               Order dikirim dengan TP di level TP3. Saat harga menyentuh TP1, sebagian posisi otomatis ditutup dan SL sisanya dipindah ke breakeven. Saat menyentuh TP2, sisa posisi beralih ke trailing stop.
+            </p>
+
+            <p className="text-[11px] text-text-tertiary leading-relaxed mt-2">
+              Sinyal ini hanya muncul setelah lolos gate wajib AI Chart Analyst (konfluensi MACD, Bollinger Bands, candlestick) — sinyal yang tidak disetujui AI otomatis dibatalkan dan tidak tampil di sini.
             </p>
 
             {sig.execution_detail && (
@@ -223,5 +241,50 @@ function StageBadge({ label, done }: { label: string; done: boolean }) {
     >
       {done ? "✓" : "○"} {label}
     </span>
+  );
+}
+
+function NewsBadge({ sig }: { sig: TradeSignal }) {
+  if (sig.news_status === "CALENDAR_BLACKOUT") {
+    return (
+      <div className="text-[11px] px-2 py-1.5 rounded mb-3 border text-loss bg-loss-dim/20 border-loss-dim">
+        🗓 Ditahan — window rilis data ekonomi high-impact
+      </div>
+    );
+  }
+
+  const ai = sig.ai_analysis;
+  const aiUsable = ai && !ai.error && ai.confidence >= 0.55; // selaras dengan AI_MIN_CONFIDENCE default
+
+  let headline = `📰 Berita high-impact terdeteksi`;
+  let detail = "";
+
+  if (aiUsable && ai) {
+    const aiDirection = ai.sentiment === "bullish" ? "BUY" : ai.sentiment === "bearish" ? "SELL" : null;
+    if (aiDirection === null) {
+      headline = "📰 Berita high-impact, AI: netral — lot normal";
+    } else if (aiDirection === sig.direction) {
+      headline = `📰 Berita searah sinyal (AI: ${ai.sentiment}) — lot normal`;
+    } else {
+      headline = `⚠️ Berita berlawanan arah (AI: ${ai.sentiment}) — lot diperkecil ke minimum${sig.lot_used ? ` (${sig.lot_used})` : ""}`;
+    }
+    detail = `Keyakinan AI: ${(ai.confidence * 100).toFixed(0)}% — ${ai.reason}`;
+  } else {
+    headline = `📰 Berita high-impact — lot normal${ai?.error ? " (AI tidak tersedia)" : ""}`;
+  }
+
+  const isWarning = aiUsable && ai && sig.ai_analysis && headline.startsWith("⚠️");
+
+  return (
+    <div
+      className={`text-[11px] px-2 py-1.5 rounded mb-3 border ${
+        isWarning
+          ? "text-loss bg-loss-dim/20 border-loss-dim"
+          : "text-accent bg-accent-dim/20 border-accent-dim"
+      }`}
+    >
+      <p>{headline}</p>
+      {detail && <p className="text-text-tertiary mt-1 leading-relaxed">{detail}</p>}
+    </div>
   );
 }

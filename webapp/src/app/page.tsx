@@ -11,8 +11,10 @@ import { PositionsTable } from "@/components/PositionsTable";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { SignalPanel } from "@/components/SignalPanel";
 import { SignalHistoryTable } from "@/components/SignalHistoryTable";
+import { NewsPanel } from "@/components/NewsPanel";
+import { JournalPanel } from "@/components/JournalPanel";
 
-type Tab = "terminal" | "signal";
+type Tab = "terminal" | "signal" | "journal";
 
 export default function DashboardPage() {
   const { snapshot, status } = useLiveData();
@@ -48,6 +50,16 @@ export default function DashboardPage() {
             {snapshot?.signal_engine && !snapshot.signal_engine.enabled && (
               <span className="w-1.5 h-1.5 rounded-full bg-loss" />
             )}
+          </button>
+          <button
+            onClick={() => setTab("journal")}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+              tab === "journal"
+                ? "text-text-primary border-b-2 border-accent -mb-px"
+                : "text-text-tertiary hover:text-text-secondary"
+            }`}
+          >
+            Journal
           </button>
         </div>
 
@@ -85,11 +97,14 @@ export default function DashboardPage() {
               <SignalHistoryTable />
             </div>
 
-            <div>
+            <div className="space-y-6">
               <SignalPanel signalEngine={snapshot?.signal_engine ?? null} />
+              <NewsPanel newsEngine={snapshot?.news_engine ?? null} />
             </div>
           </div>
         )}
+
+        {tab === "journal" && <JournalPanel />}
       </main>
 
       <footer className="border-t border-line py-4">
