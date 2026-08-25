@@ -218,7 +218,24 @@ NEWS_RSS_FEEDS = [
     ("https://www.investing.com/rss/news_1.rss", "Investing.com Forex"),
     ("https://www.fxstreet.com/rss", "FXStreet"),
     ("https://www.kitco.com/rss/KitcoNews.xml", "Kitco News (Gold)"),
+    ("https://www.forexlive.com/feed/news", "ForexLive"),
+    (
+        "https://news.google.com/rss/search?q=gold+OR+XAUUSD+OR+%22dollar+index%22+when:1d&hl=en-US&gl=US&ceid=US:en",
+        "Google News (Gold/XAUUSD)",
+    ),
 ]
+# CATATAN soal urutan sumber di atas: semua feed di daftar ini SEKALIGUS
+# dipakai bersamaan (bukan "coba satu, kalau gagal baru coba berikutnya")
+# — tiap feed di-fetch independen di _fetch_all_news(), lalu hasilnya
+# digabung & di-dedup lewat URL. Ini SENGAJA dibuat begini, bukan rantai
+# fallback berurutan: kalau Finnhub kena limit ATAU Investing.com
+# nge-block IP VPS (lihat catatan di bawah), ForexLive/Google
+# News/Kitco/dll yang masih hidup TETAP otomatis ngisi datanya di
+# siklus refresh yang sama — tidak perlu nunggu Finnhub "gagal dulu"
+# baru pindah, jadi coverage-nya lebih tebal daripada rantai fallback
+# satu-per-satu. Kalau salah satu feed di atas ternyata sering gagal di
+# VPS lo (misal Google News RSS kena rate limit dari IP tertentu),
+# tinggal hapus barisnya dari list ini — sumber lain tetap jalan normal.
 
 # --- Sumber berita tambahan (opsional): Finnhub /news ---
 # Ini SUMBER TAMBAHAN, bukan pengganti RSS di atas — kalau diisi, berita
@@ -509,4 +526,71 @@ AI_CHART_MIN_CONFIDENCE = 0.6
 #                             kalau tidak mau bot berhenti total hanya
 #                             karena AI provider bermasalah.
 AI_CHART_FAIL_MODE = "fail_safe"
+
+# ==============================================================
+# 12. EQUITY HISTORY — persist equity chart di sisi bridge (permanen)
+# ==============================================================
+# Sebelumnya grafik equity di web app cuma nyimpen data di memory
+# browser (React state) — HILANG tiap kali halaman di-refresh. Sekarang
+# equity/balance disimpan permanen ke file SQLite lokal di bridge
+# (bridge/equity_history.db) lewat equity_store.py, jadi grafiknya
+# tetap ada walau browser di-refresh, ganti device, ATAU bridge
+# di-restart.
+
+# Interval minimum antar snapshot yang ditulis ke database (detik).
+# broadcaster_loop di main.py jalan tiap 1 detik, tapi kita TIDAK perlu
+# simpan tiap detik ke disk — cukup tiap 30 detik supaya file db tidak
+# membengkak tanpa perlu, sambil grafik tetap cukup detail.
+EQUITY_LOG_INTERVAL_SEC = 30
+
+# Berapa lama data equity lama disimpan sebelum dihapus otomatis
+# (hari). Dijalankan sekali tiap bridge startup, supaya file db tidak
+# tumbuh tanpa batas selamanya.
+EQUITY_RETENTION_DAYS = 90
+
+# ==============================================================
+# 13. CORRELATION HEATMAP — korelasi XAUUSD vs aset lain (yfinance)
+# ==============================================================
+# Heatmap korelasi harian antara XAUUSD dan aset-aset makro terkait
+# (DXY, EUR/USD, yield, minyak, dll), dihitung dari data gratis
+# yfinance — TIDAK butuh API key. Fitur ini murni informational untuk
+# ditampilkan di web app, TIDAK dipakai signal engine untuk keputusan
+# entry otomatis.
+USE_CORRELATION_ENGINE = True
+
+# Ticker yfinance untuk proxy harga XAUUSD. "GC=F" (COMEX Gold Futures)
+# dipakai sebagai default karena histori datanya paling lengkap &
+# stabil di yfinance. Alternatif kalau ini bermasalah di VPS lo:
+# "XAUUSD=X" (ticker forex-style, kadang datanya lebih tipis).
+CORRELATION_XAUUSD_TICKER = "GC=F"
+
+# Daftar aset yang dibandingkan di heatmap.
+# Format: (ticker_yfinance, label_tampilan_di_web_app).
+# CORRELATION_XAUUSD_TICKER di atas WAJIB jadi baris pertama di sini.
+CORRELATION_ASSETS = [
+    (CORRELATION_XAUUSD_TICKER, "XAUUSD (Gold)"),
+    ("DX-Y.NYB", "DXY (Dollar Index)"),
+    ("EURUSD=X", "EUR/USD"),
+    ("^TNX", "US 10Y Yield"),
+    ("CL=F", "WTI Crude Oil"),
+    ("SI=F", "Silver"),
+    ("^GSPC", "S&P 500"),
+    ("BTC-USD", "Bitcoin"),
+]
+
+# Berapa hari data historis dipakai untuk hitung korelasi (rolling
+# window). 60 hari kira-kira cukup untuk menangkap rezim korelasi
+# jangka menengah, tanpa terlalu dipengaruhi outlier satu-dua hari.
+CORRELATION_LOOKBACK_DAYS = 60
+
+# Minimum jumlah data point valid supaya suatu aset diikutkan di
+# heatmap. Aset dengan data kurang dari ini di-skip (bukan bikin
+# seluruh fetch gagal).
+CORRELATION_MIN_DATA_POINTS = 20
+
+# Seberapa sering heatmap di-refresh (detik). Data yfinance untuk
+# ticker-ticker ini umumnya EOD (update sekali per hari bursa) — TIDAK
+# perlu di-refresh sesering signal/news engine. Default 3600 (1 jam)
+# supaya tidak membebani Yahoo Finance dengan request berlebihan.
+CORRELATION_REFRESH_INTERVAL_SEC = 3600
 

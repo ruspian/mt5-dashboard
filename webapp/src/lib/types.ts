@@ -177,6 +177,27 @@ export interface WSSnapshot {
   news_engine: NewsEngineStatus;
 }
 
+export interface EquityHistoryPoint {
+  time: string;
+  balance: number;
+  equity: number;
+  profit: number;
+}
+
+export interface CorrelationMatrix {
+  assets: string[];
+  matrix: (number | null)[][];
+  period_days: number;
+  computed_at: string;
+}
+
+export interface CorrelationStatus {
+  enabled: boolean;
+  last_fetch_time: string | null;
+  last_error: string | null;
+  matrix: CorrelationMatrix | null;
+}
+
 export type TradeSource = "manual" | "ea" | "signal";
 
 export interface JournalTrade {

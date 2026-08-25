@@ -5,6 +5,7 @@ import { useLiveData } from "@/lib/use-live-data";
 import { TopBar } from "@/components/TopBar";
 import { AccountSummary } from "@/components/AccountSummary";
 import { EquityChart } from "@/components/EquityChart";
+import { CorrelationHeatmap } from "@/components/CorrelationHeatmap";
 import { EAControlPanel } from "@/components/EAControlPanel";
 import { OrderTerminal } from "@/components/OrderTerminal";
 import { PositionsTable } from "@/components/PositionsTable";
@@ -81,6 +82,7 @@ export default function DashboardPage() {
             <div className="space-y-6">
               <EAControlPanel ea={snapshot?.ea ?? null} />
               <OrderTerminal />
+              <CorrelationHeatmap />
             </div>
           </div>
         )}

@@ -4,3 +4,9 @@ fastapi==0.111.0
 uvicorn[standard]==0.30.1
 pydantic==2.7.4
 requests==2.32.3
+
+# Dipakai correlation_engine.py untuk heatmap korelasi XAUUSD vs DXY/dll.
+# yfinance sendiri bergantung ke pandas; kalau versi ini bentrok dengan
+# paket lain di VPS lo, boleh dilonggarkan (hapus pin versi persisnya).
+yfinance==0.2.43
+pandas<2.3

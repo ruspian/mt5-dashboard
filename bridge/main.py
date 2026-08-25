@@ -36,6 +36,8 @@ import mt5_utils
 import signal_engine
 import news_engine
 import trade_journal
+import equity_store
+import correlation_engine
 
 logging.basicConfig(
     level=logging.INFO,
@@ -467,6 +469,32 @@ def news_status(authorization: Optional[str] = Header(None)):
 
 
 # ==============================================================
+#  EQUITY HISTORY — riwayat equity permanen (SQLite di sisi bridge)
+# ==============================================================
+@app.get("/equity/history")
+def equity_history(hours: float = 24, authorization: Optional[str] = Header(None)):
+    check_token(authorization)
+    try:
+        return equity_store.get_history(hours=hours)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==============================================================
+#  CORRELATION HEATMAP — XAUUSD vs DXY/aset lain (yfinance)
+# ==============================================================
+@app.get("/correlation")
+def correlation(authorization: Optional[str] = Header(None)):
+    check_token(authorization)
+    return {
+        "enabled": config.USE_CORRELATION_ENGINE,
+        "last_fetch_time": correlation_engine.state.last_fetch_time,
+        "last_error": correlation_engine.state.last_error,
+        "matrix": correlation_engine.state.matrix.to_dict() if correlation_engine.state.matrix else None,
+    }
+
+
+# ==============================================================
 #  TRADE JOURNAL — riwayat trade lengkap + statistik win rate
 # ==============================================================
 @app.get("/journal/trades")
@@ -593,9 +621,25 @@ async def broadcaster_loop():
     while True:
         try:
             if manager.active:
+                account_snapshot = get_account_snapshot()
+                # Simpan snapshot equity ke SQLite (di-throttle internal
+                # lewat config.EQUITY_LOG_INTERVAL_SEC) supaya grafik equity
+                # di web app permanen — tidak reset tiap kali halaman
+                # di-refresh. Loop terpisah (equity_logger_loop di bawah)
+                # menjaga pencatatan tetap jalan walau tidak ada klien WS
+                # yang lagi buka dashboard-nya.
+                try:
+                    equity_store.record(
+                        balance=account_snapshot["balance"],
+                        equity=account_snapshot["equity"],
+                        profit=account_snapshot["profit"],
+                    )
+                except Exception as e:
+                    log.warning(f"Gagal mencatat equity history: {e}")
+
                 payload = {
                     "type": "snapshot",
-                    "account": get_account_snapshot(),
+                    "account": account_snapshot,
                     "positions": get_open_positions(),
                     "ea": {**read_ea_status(), "signal": read_ea_signal()},
                     "signal_engine": {
@@ -670,6 +714,37 @@ async def news_engine_loop():
         await asyncio.sleep(config.NEWS_CHECK_INTERVAL_SEC)
 
 
+async def equity_logger_loop():
+    """Loop background terpisah KHUSUS pencatatan equity ke SQLite,
+    berjalan setiap config.EQUITY_LOG_INTERVAL_SEC TERLEPAS dari ada atau
+    tidaknya klien WebSocket yang lagi buka dashboard. Ini yang membuat
+    grafik equity permanen & lengkap walau dashboard tidak selalu dibuka
+    di browser — berbeda dari broadcaster_loop yang cuma mencatat saat
+    ada klien aktif (supaya tidak query MT5 tiap 1 detik tanpa perlu)."""
+    while True:
+        try:
+            ensure_mt5_connected()
+            acc = get_account_snapshot()
+            equity_store.record(balance=acc["balance"], equity=acc["equity"], profit=acc["profit"])
+        except Exception as e:
+            log.warning(f"Equity logger loop error: {e}")
+        await asyncio.sleep(config.EQUITY_LOG_INTERVAL_SEC)
+
+
+async def correlation_engine_loop():
+    """Loop background terpisah: refresh heatmap korelasi XAUUSD vs
+    aset lain lewat yfinance. Dijalankan lewat asyncio.to_thread karena
+    yfinance melakukan HTTP request blocking — supaya tidak macetin
+    event loop FastAPI (yang juga harus tetap responsif untuk
+    broadcaster_loop tiap 1 detik)."""
+    while True:
+        try:
+            await asyncio.to_thread(correlation_engine.refresh)
+        except Exception as e:
+            log.warning(f"Correlation engine loop error: {e}")
+        await asyncio.sleep(config.CORRELATION_REFRESH_INTERVAL_SEC)
+
+
 @app.on_event("startup")
 async def on_startup():
     try:
@@ -682,6 +757,13 @@ async def on_startup():
     asyncio.create_task(broadcaster_loop())
     asyncio.create_task(signal_engine_loop())
     asyncio.create_task(position_monitor_loop())
+    asyncio.create_task(equity_logger_loop())
+
+    try:
+        equity_store.prune_old()
+    except Exception as e:
+        log.warning(f"Gagal menghapus riwayat equity lama saat startup: {e}")
+
     if config.USE_NEWS_ENGINE:
         asyncio.create_task(news_engine_loop())
         # fetch pertama langsung saat startup, tidak perlu tunggu interval pertama
@@ -689,6 +771,15 @@ async def on_startup():
             news_engine.refresh()
         except Exception as e:
             log.warning(f"News engine initial fetch gagal: {e}")
+
+    if config.USE_CORRELATION_ENGINE:
+        asyncio.create_task(correlation_engine_loop())
+        # fetch pertama langsung saat startup (di thread terpisah, biar
+        # tidak blocking startup event FastAPI kalau yfinance lambat)
+        try:
+            await asyncio.to_thread(correlation_engine.refresh)
+        except Exception as e:
+            log.warning(f"Correlation engine initial fetch gagal: {e}")
     log.info(
         f"Signal engine aktif untuk {config.SIGNAL_SYMBOL} ({config.SIGNAL_TIMEFRAME}), "
         f"auto_execute={config.AUTO_EXECUTE}, cek tiap {config.SIGNAL_CHECK_INTERVAL_SEC}s"

@@ -1,4 +1,4 @@
-import type { AccountSnapshot, HistoryResponse, Position, EAStatus, SignalEngineStatus, TradeSignal, NewsEngineStatus, JournalTrade, JournalStats, TradeSource } from "./types";
+import type { AccountSnapshot, HistoryResponse, Position, EAStatus, SignalEngineStatus, TradeSignal, NewsEngineStatus, JournalTrade, JournalStats, TradeSource, EquityHistoryPoint, CorrelationStatus } from "./types";
 
 /**
  * Semua fungsi di sini memanggil bridge lewat proxy server Next.js
@@ -80,6 +80,11 @@ export const bridgeApi = {
     }),
 
   getNewsStatus: () => bridgeFetch<NewsEngineStatus>("/news/status"),
+
+  getEquityHistory: (hours = 24) =>
+    bridgeFetch<EquityHistoryPoint[]>(`/equity/history?hours=${hours}`),
+
+  getCorrelation: () => bridgeFetch<CorrelationStatus>("/correlation"),
 
   getJournalTrades: (days = 90, source?: TradeSource) =>
     bridgeFetch<JournalTrade[]>(`/journal/trades?days=${days}${source ? `&source=${source}` : ""}`),
