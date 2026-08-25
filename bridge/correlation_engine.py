@@ -70,6 +70,18 @@ class CorrelationEngineState:
 state = CorrelationEngineState()
 
 
+def _resolve_xauusd_ticker(all_closes: dict) -> Optional[str]:
+    """Cari ticker proxy XAUUSD pertama dari daftar kandidat
+    (config.CORRELATION_XAUUSD_TICKER_CANDIDATES) yang berhasil kasih
+    data. Yahoo Finance akhir-akhir ini sering ngasih data kosong untuk
+    ticker futures ('GC=F') secara tidak konsisten, jadi kita gak boleh
+    gantung ke satu ticker doang."""
+    for candidate in config.CORRELATION_XAUUSD_TICKER_CANDIDATES:
+        if candidate in all_closes:
+            return candidate
+    return None
+
+
 def _fetch_and_compute() -> CorrelationMatrix:
     # Import di dalam fungsi (bukan di top-level) supaya bridge tetap bisa
     # jalan normal walau yfinance/pandas belum ke-install — cuma fitur
@@ -77,8 +89,21 @@ def _fetch_and_compute() -> CorrelationMatrix:
     import yfinance as yf
     import pandas as pd
 
-    tickers = [t for t, _ in config.CORRELATION_ASSETS]
-    labels = {t: label for t, label in config.CORRELATION_ASSETS}
+    # Aset non-XAUUSD dari config, plus SEMUA kandidat ticker XAUUSD
+    # (bukan cuma yang pertama) — supaya kalau kandidat pertama ("GC=F")
+    # kosong, kita masih punya data kandidat berikutnya di batch fetch
+    # yang sama, tanpa perlu request round-trip kedua ke Yahoo Finance.
+    other_assets = [(t, label) for t, label in config.CORRELATION_ASSETS if t != config.CORRELATION_XAUUSD_TICKER]
+    xauusd_candidates = config.CORRELATION_XAUUSD_TICKER_CANDIDATES
+    xauusd_label = next(
+        (label for t, label in config.CORRELATION_ASSETS if t == config.CORRELATION_XAUUSD_TICKER),
+        "XAUUSD (Gold)",
+    )
+
+    tickers = list(dict.fromkeys(xauusd_candidates + [t for t, _ in other_assets]))
+    labels = {t: label for t, label in other_assets}
+    for c in xauusd_candidates:
+        labels.setdefault(c, xauusd_label)
 
     raw = yf.download(
         tickers,
@@ -104,26 +129,37 @@ def _fetch_and_compute() -> CorrelationMatrix:
         except Exception as e:
             log.warning(f"Gagal ambil data '{t}' dari yfinance: {e}")
 
-    if config.CORRELATION_XAUUSD_TICKER not in closes:
+    xauusd_ticker = _resolve_xauusd_ticker(closes)
+    if xauusd_ticker is None:
         raise RuntimeError(
-            f"Data harga untuk '{config.CORRELATION_XAUUSD_TICKER}' (proxy XAUUSD) tidak tersedia dari "
-            f"yfinance — tidak bisa hitung korelasi apa pun. Cek koneksi internet VPS atau coba ganti "
-            f"CORRELATION_XAUUSD_TICKER di config.py (misal ke 'XAUUSD=X')."
+            f"Tidak ada data XAUUSD yang berhasil diambil dari yfinance — sudah dicoba "
+            f"{xauusd_candidates}, semuanya gagal/kosong. Ini kemungkinan besar masalah "
+            f"sementara di sisi Yahoo Finance untuk ticker futures, coba lagi nanti, atau "
+            f"cek koneksi internet VPS ke Yahoo Finance."
         )
+    if xauusd_ticker != xauusd_candidates[0]:
+        log.info(f"Ticker XAUUSD utama ('{xauusd_candidates[0]}') kosong, pakai fallback '{xauusd_ticker}'.")
 
-    df = pd.DataFrame(closes).dropna(how="all")
+    # Drop kandidat XAUUSD lain yang TIDAK terpakai, supaya tidak muncul
+    # dobel di heatmap (misal GLD ikut ditampilkan padahal cuma
+    # cadangan yang tidak dipakai).
+    for c in xauusd_candidates:
+        if c != xauusd_ticker:
+            closes.pop(c, None)
+
+    ordered = [xauusd_ticker] + [t for t, _ in other_assets if t in closes]
+    asset_labels = [labels.get(t, t) for t in ordered]
+
+    df = pd.DataFrame({t: closes[t] for t in ordered}).dropna(how="all")
     returns = df.pct_change().dropna(how="all")
     corr_df = returns.corr()
-
-    ordered = [t for t in tickers if t in corr_df.columns]
-    asset_labels = [labels.get(t, t) for t in ordered]
 
     matrix: list[list[Optional[float]]] = []
     for t1 in ordered:
         row = []
         for t2 in ordered:
-            val = corr_df.loc[t1, t2]
-            row.append(None if pd.isna(val) else round(float(val), 3))
+            val = corr_df.loc[t1, t2] if (t1 in corr_df.columns and t2 in corr_df.columns) else None
+            row.append(None if val is None or pd.isna(val) else round(float(val), 3))
         matrix.append(row)
 
     return CorrelationMatrix(

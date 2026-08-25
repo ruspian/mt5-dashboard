@@ -216,14 +216,20 @@ NEWS_RSS_FEEDS = [
     ("https://finance.yahoo.com/news/rssindex", "Yahoo Finance"),
     ("https://www.investing.com/rss/news_11.rss", "Investing.com Commodities"),
     ("https://www.investing.com/rss/news_1.rss", "Investing.com Forex"),
-    ("https://www.fxstreet.com/rss", "FXStreet"),
-    ("https://www.kitco.com/rss/KitcoNews.xml", "Kitco News (Gold)"),
     ("https://www.forexlive.com/feed/news", "ForexLive"),
     (
         "https://news.google.com/rss/search?q=gold+OR+XAUUSD+OR+%22dollar+index%22+when:1d&hl=en-US&gl=US&ceid=US:en",
         "Google News (Gold/XAUUSD)",
     ),
 ]
+# CATATAN: FXStreet dan Kitco SEMPAT ada di list ini, tapi dihapus karena
+# terbukti gagal terus di produksi (FXStreet: SSL certificate hostname
+# mismatch — kemungkinan situsnya ganti CDN/infrastruktur; Kitco: RSS
+# lama-nya sudah 404, tidak ada pengganti resmi yang terverifikasi masih
+# live). Daripada nebak URL baru yang belum tentu benar, mending dihapus
+# — sumber yang tersisa di bawah ini semuanya sudah dites & jalan.
+# Kalau nanti nemu URL RSS FXStreet/Kitco yang baru dan valid, tinggal
+# tambahkan lagi ke list ini dengan format yang sama.
 # CATATAN soal urutan sumber di atas: semua feed di daftar ini SEKALIGUS
 # dipakai bersamaan (bukan "coba satu, kalau gagal baru coba berikutnya")
 # — tiap feed di-fetch independen di _fetch_all_news(), lalu hasilnya
@@ -558,11 +564,27 @@ EQUITY_RETENTION_DAYS = 90
 # entry otomatis.
 USE_CORRELATION_ENGINE = True
 
-# Ticker yfinance untuk proxy harga XAUUSD. "GC=F" (COMEX Gold Futures)
-# dipakai sebagai default karena histori datanya paling lengkap &
-# stabil di yfinance. Alternatif kalau ini bermasalah di VPS lo:
-# "XAUUSD=X" (ticker forex-style, kadang datanya lebih tipis).
-CORRELATION_XAUUSD_TICKER = "GC=F"
+# Ticker yfinance untuk proxy harga XAUUSD, dicoba BERURUTAN sampai
+# salah satu berhasil kasih data cukup. Ini penting karena Yahoo Finance
+# akhir-akhir ini sering ngasih data kosong untuk ticker futures kayak
+# "GC=F" secara tidak konsisten (issue yang juga dilaporkan banyak
+# pengguna yfinance lain, bukan cuma di setup kita) — jadi daripada
+# gantung ke satu ticker doang, sistem otomatis coba yang berikutnya
+# kalau yang pertama gagal/kosong.
+#   - "GC=F"     : COMEX Gold Futures — histori paling lengkap, tapi
+#                  kadang kosong belakangan ini (masalah dari Yahoo).
+#   - "XAUUSD=X" : ticker forex-style, kadang lebih stabil saat GC=F
+#                  bermasalah, tapi historinya kadang lebih tipis.
+#   - "GLD"      : ETF SPDR Gold Shares — proxy tidak sempurna (ada
+#                  sedikit tracking error vs harga spot), tapi paling
+#                  jarang kosong karena ini saham biasa, bukan futures.
+CORRELATION_XAUUSD_TICKER_CANDIDATES = ["GC=F", "XAUUSD=X", "GLD"]
+
+# Ticker yang benar-benar dipakai di CORRELATION_ASSETS di bawah — akan
+# ditimpa otomatis oleh correlation_engine.py dengan ticker pertama dari
+# daftar kandidat di atas yang berhasil kasih data (lihat refresh()).
+# Nilai awal di sini cuma default/fallback kalau semua kandidat gagal.
+CORRELATION_XAUUSD_TICKER = CORRELATION_XAUUSD_TICKER_CANDIDATES[0]
 
 # Daftar aset yang dibandingkan di heatmap.
 # Format: (ticker_yfinance, label_tampilan_di_web_app).
